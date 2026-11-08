@@ -67,8 +67,9 @@ const after = (t, f) => timers.push({ t, f });
 /* ---------- sound: everything is synthesised, nothing to download ---------- */
 let ac = null;
 function audio() { if (ac) { if (ac.state === 'suspended') ac.resume(); return } try { ac = new (window.AudioContext || window.webkitAudioContext)() } catch (e) { } }
-function tone(f, d, type = 'sine', v = .2, to = null, at = 0) { if (!ac || muted) return; const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + at; o.type = type; o.frequency.setValueAtTime(f, t); if (to) o.frequency.exponentialRampToValueAtTime(to, t + d); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.001, t + d); o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d + .02) }
-function noise(d, f = 1200, v = .25, at = 0) { if (!ac || muted) return; const n = Math.floor(ac.sampleRate * d), b = ac.createBuffer(1, n, ac.sampleRate), c = b.getChannelData(0); for (let i = 0; i < n; i++)c[i] = (Math.random() * 2 - 1) * (1 - i / n); const s = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain(), t = ac.currentTime + at; s.buffer = b; fl.type = 'lowpass'; fl.frequency.value = f; g.gain.value = v; s.connect(fl).connect(g).connect(ac.destination); s.start(t) }
+function tone(f, d, type = 'sine', v = .2, to = null, at = 0) { if (!ac || muted) return; const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + at; o.type = type; o.frequency.setValueAtTime(f, t); if (to) o.frequency.exponentialRampToValueAtTime(to, t + d); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + .008); g.gain.exponentialRampToValueAtTime(.0006, t + d); g.gain.linearRampToValueAtTime(0, t + d + .015); o.connect(g).connect(BUS()); o.start(t); o.stop(t + d + .02) }
+let __bus = null; function BUS() { if (!__bus || __bus.context !== ac) { const c = ac.createDynamicsCompressor(); c.threshold.value = -22; c.knee.value = 8; c.ratio.value = 14; c.attack.value = .001; c.release.value = .2; const m = ac.createGain(); m.gain.value = .78; c.connect(m).connect(ac.destination); c.__m = m; __bus = c } return __bus }
+function noise(d, f = 1200, v = .25, at = 0) { if (!ac || muted) return; const n = Math.floor(ac.sampleRate * d), b = ac.createBuffer(1, n, ac.sampleRate), c = b.getChannelData(0); for (let i = 0; i < n; i++)c[i] = (Math.random() * 2 - 1) * (1 - i / n) * Math.min(1, i / 180); const s = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain(), t = ac.currentTime + at; s.buffer = b; fl.type = 'lowpass'; fl.frequency.value = f; g.gain.value = v; s.connect(fl).connect(g).connect(BUS()); s.start(t) }
 const SFX = {
   splat() { noise(.22, 900, .45); tone(180, .15, 'sine', .25, 60) },
   squeak() { tone(1400, .08, 'square', .1, 2300); tone(1900, .14, 'square', .1, 900, .08) },
@@ -353,8 +354,8 @@ const VOXDATA={"a": [{"c": "pain", "t": "אוי!", "d": 0.62, "u": "data:audio/m
     let P = L.filter(([, i]) => i !== last[w + cat]); if (!P.length) P = L; const [c, i] = P[Math.random() * P.length | 0]; last[w + cat] = i;
     g._vox = 1; g.say(c.t, Math.max(1.1, c.d + .35)); g._vox = 0; g._voxUntil = now() + c.d;
     if (!ac || muted || !buf[w][i]) return true;
-    if (cur[w]) { try { cur[w].stop() } catch (e) { } }
-    const s = ac.createBufferSource(), gn = ac.createGain(); s.buffer = buf[w][i]; gn.gain.value = o.v || .95; s.connect(gn).connect(ac.destination); s.start(ac.currentTime + (o.at || 0)); cur[w] = s; s.onended = () => { if (cur[w] === s) cur[w] = null };
+    if (cur[w]) { try { const q = cur[w]; q._g.gain.cancelScheduledValues(ac.currentTime); q._g.gain.setValueAtTime(q._g.gain.value, ac.currentTime); q._g.gain.linearRampToValueAtTime(0, ac.currentTime + .05); q.stop(ac.currentTime + .06) } catch (e) { } }
+    const s = ac.createBufferSource(), gn = ac.createGain(); s.buffer = buf[w][i]; s._g = gn; const t0 = ac.currentTime + (o.at || 0); gn.gain.setValueAtTime(0, t0); gn.gain.linearRampToValueAtTime(o.v || .95, t0 + .012); s.connect(gn).connect(typeof BUS === 'function' ? BUS() : ac.destination); s.start(t0); cur[w] = s; s.onended = () => { if (cur[w] === s) cur[w] = null };
     return true
   }
   window.__vox = { play, V, buf, get loaded() { return loaded }, log: [] };
@@ -399,7 +400,7 @@ const VOXDATA={"a": [{"c": "pain", "t": "אוי!", "d": 0.62, "u": "data:audio/m
 </script>
 <script>
 (() => {
-  const SIL = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfOdKl7pyn3Xf//WreyTRUoAWgBgkOAGbZHBgG1OF6zM82DWbZaUmMBptgQhGjsyYqc9ae9XFz280948NMBWInljyzsNRFLPWdnZGWrddDsjK1unuSrVN9jJsK8KuQtQCtMBjCEtImISdNKJOopIpBFpNSMbIHCSRpRR5iakjTiyzLhchUUBwCgyKiweBv/7UsQbg8isVNoMPMjAAAA0gAAABEVFGmgqK////9bP/6XCykxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+  const SIL = (() => { const sr = 8000, n = sr / 2, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, t) => { for (let k = 0; k < t.length; k++) v.setUint8(o + k, t.charCodeAt(k)) }; w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true); return URL.createObjectURL(new Blob([b], { type: 'audio/wav' })) })();
   let el = null;
   const go = () => {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback' } catch (e) { }
